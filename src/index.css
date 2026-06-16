@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  
+  --color-brand-primary: #0C5CAB;
+  --color-brand-secondary: #0a4a8a;
+  --color-brand-success: #10b981;
+  --color-brand-warning: #f59e0b;
+  --color-brand-danger: #ef4444;
+  --color-brand-surface: #09090b;
+  --color-brand-panel: #18181b;
+  --color-brand-text: #fafafa;
+}
+
+body {
+  background-color: #09090b;
+  color: #fafafa;
+  font-family: "IBM Plex Sans", sans-serif;
+}
+
+/* custom styles for glass effect */
+.glass-panel {
+  background-color: rgba(24, 24, 27, 0.65);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(39, 39, 42, 0.75);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.82);
+}
+
+/* Custom Scrollbar for exceptional visual quality */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}

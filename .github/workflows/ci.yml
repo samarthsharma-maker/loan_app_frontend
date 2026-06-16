@@ -1,0 +1,200 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+
+permissions:
+  contents: read
+  id-token: write   # required for AWS OIDC (ECR push)
+
+env:
+  AWS_REGION: ap-south-1
+  IMAGE_NAME: loan_app_frontend
+
+jobs:
+  # ── 1. Lint, test & build ───────────────────────────────────────────────────
+  build-test:
+    name: lint, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check (lint)
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  # ── 2. Snyk dependency vulnerability scan ──────────────────────────────────
+  #snyk:
+  #  name: Snyk dependency scan
+  #  runs-on: ubuntu-latest
+  #  needs: build-test
+  #  continue-on-error: true
+  #  steps:
+  #    - uses: actions/checkout@v4
+  #    - uses: actions/setup-node@v4
+  #      with:
+  #        node-version: '20'
+  #        cache: npm
+  #    - name: Install dependencies
+  #      run: npm ci
+  #    - name: Snyk scan
+  #      uses: snyk/actions/node@master
+  #      with:
+  #        args: --severity-threshold=high
+  #      env:
+  #        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # ── 3. Build Docker image ───────────────────────────────────────────────────
+  build-image:
+    name: build image
+    runs-on: ubuntu-latest
+    needs: build-test
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          build-args: VITE_API_BASE_URL=/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/frontend-image.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp/frontend-image.tar
+          retention-days: 1
+
+  # ── 4. Trivy container vulnerability scan ──────────────────────────────────
+  trivy-scan:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    needs: build-image
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load --input /tmp/frontend-image.tar
+
+      - name: Trivy scan (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ needs.build-image.outputs.image-tag }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      - name: Trivy scan (full SARIF report)
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ needs.build-image.outputs.image-tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-frontend-report
+          path: trivy-results.sarif
+          retention-days: 7
+
+  # ── 5. Push to ECR + update GitOps (main branch only) ──────────────────────
+  push-and-deploy:
+    name: push to ECR & update GitOps
+    runs-on: ubuntu-latest
+    needs: [build-test, build-image, trivy-scan] 
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load --input /tmp/frontend-image.tar
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Check Secret Length
+        env:
+          SECRET_VAL: ${{ secrets.ECR_FRONTEND_URI }}
+        run: |
+          echo "The length of the secret is: ${#SECRET_VAL}"
+          echo "Image name is : ${{ env.IMAGE_NAME }}"
+          echo "Secret val: ${SECRET_VAL}"
+
+      - name: Tag and push to ECR
+        env:
+          ECR_URI: ${{ secrets.ECR_FRONTEND_URI }}
+          TAG: ${{ needs.build-image.outputs.image-tag }}
+        run: |
+          docker tag ${{ env.IMAGE_NAME }}:${TAG} ${ECR_URI}:${TAG}
+          docker tag ${{ env.IMAGE_NAME }}:${TAG} ${ECR_URI}:latest
+          docker push ${ECR_URI}:${TAG}
+          docker push ${ECR_URI}:latest
+
+      # - uses: actions/checkout@v4
+      #   with:
+      #     repository: vilasvarghese/loanhub-gitops
+      #     token: ${{ secrets.GITOPS_TOKEN }}
+      #     path: gitops
+
+      # - name: Update image tag in GitOps repo
+      #   env:
+      #     ECR_URI: ${{ secrets.ECR_FRONTEND_URI }}
+      #     TAG: ${{ needs.build-image.outputs.image-tag }}
+      #   run: |
+      #     cd gitops
+      #     curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+      #     cd overlays/prod
+      #     ./../../kustomize edit set image frontend=${ECR_URI}:${TAG}
+      #     git config user.name  "github-actions[bot]"
+      #     git config user.email "github-actions[bot]@users.noreply.github.com"
+      #     git add kustomization.yaml
+      #     git commit -m "chore(frontend): bump image to ${TAG}"
+      #     git push

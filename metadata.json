@@ -1,0 +1,6 @@
+{
+  "name": "LoanHub",
+  "description": "Digital Banking Loan Portal for checking eligibility, calculating EMIs, applying for loans (Personal, Home, Business, Vehicle, Gold), uploading documents, and tracking application status with customer, officer, and admin roles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

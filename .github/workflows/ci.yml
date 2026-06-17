@@ -178,23 +178,23 @@ jobs:
           docker push ${ECR_URI}:${TAG}
           docker push ${ECR_URI}:latest
 
-      # - uses: actions/checkout@v4
-      #   with:
-      #     repository: vilasvarghese/loanhub-gitops
-      #     token: ${{ secrets.GITOPS_TOKEN }}
-      #     path: gitops
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/loan_app_gitops
+          token: ${{ secrets.GH_TOKEN }}
+          path: gitops
 
-      # - name: Update image tag in GitOps repo
-      #   env:
-      #     ECR_URI: ${{ secrets.ECR_FRONTEND_URI }}
-      #     TAG: ${{ needs.build-image.outputs.image-tag }}
-      #   run: |
-      #     cd gitops
-      #     curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-      #     cd overlays/prod
-      #     ./../../kustomize edit set image frontend=${ECR_URI}:${TAG}
-      #     git config user.name  "github-actions[bot]"
-      #     git config user.email "github-actions[bot]@users.noreply.github.com"
-      #     git add kustomization.yaml
-      #     git commit -m "chore(frontend): bump image to ${TAG}"
-      #     git push
+      - name: Update image tag in GitOps repo
+        env:
+          ECR_URI: ${{ secrets.ECR_FRONTEND_URI }}
+          TAG: ${{ needs.build-image.outputs.image-tag }}
+        run: |
+          cd gitops
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          cd overlays/dev
+          ../../kustomize edit set image loan_app_frontend=${ECR_URI}:${TAG}
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "chore(frontend): bump image to ${TAG}"
+          git push
